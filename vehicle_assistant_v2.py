@@ -32,6 +32,9 @@ Current Weather:
 Risk Assessment:
 {result['risk']}
 
+# Service centre assessment:
+# {result['service_centre']}
+
 Provide:
 
 1.Issue Summary
