@@ -29,7 +29,7 @@ def process_query(query):
         
     #service centre
     if any (word in query_lower for word in[
-        "service","repair","mechanic","garage","dealer"
+        "service","repair","mechanic","garage","dealer","workshop","showroom"
     ]):
         result["service_centre"] = find_service_centre()
         
@@ -41,29 +41,32 @@ def build_context(result):
 
     if "manual" in result:
         context += f"""
-MANUAL INFORMATION:
-{result['manual']}
+        MANUAL INFORMATION:
+        {result['manual']}
 
 """
 
     if "weather" in result:
         context += f"""
-WEATHER INFORMATION:
-{result['weather']}
+        WEATHER INFORMATION:
+        Condition: {result['weather']['condition']}
+        Temperature: {result['weather']['temperature']} °C
+        Humidity: {result['weather']['humidity']} %
+        Wind Speed: {result['weather']['wind_speed']} m/s
 
 """
 
     if "risk" in result:
         context += f"""
-RISK LEVEL:
-{result['risk']}
+        RISK LEVEL:
+        {result['risk']}
 
 """
 
     if "service_center" in result:
         context += f"""
-SERVICE CENTER:
-{result['service_center']}
+        SERVICE CENTER:
+        {result['service_center']}
 
 """
 

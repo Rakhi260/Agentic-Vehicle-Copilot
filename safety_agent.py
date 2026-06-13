@@ -1,68 +1,40 @@
-from dotenv import load_dotenv
-load_dotenv()
-
-from langchain_google_genai import ChatGoogleGenerativeAI
-
-llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
-    temperature=0
-)
-
 def assess_risk(query):
-
-    prompt = f"""
-You are a vehicle safety classifier.
-
-Issue:
-{query}
-
-Classify the severity.
-
-Rules:
-
-CRITICAL:
-- Brake failure
-- Engine overheating
-- Steering failure
-- Airbag failure
-
-HIGH:
-- Tire puncture
-- Battery failure
-- Coolant leak
-
-MEDIUM:
-- Wiper failure
-- Headlight failure
-- Tire pressure warning
-
-LOW:
-- Washer fluid low
-- Minor maintenance reminders
-- Service center requests
-
-Output ONLY one word:
-
-LOW
-MEDIUM
-HIGH
-CRITICAL
-"""
-    print("Classifying risk...")
     
-    response = llm.invoke(prompt)
-    
-    print("Gemini responded.")
-    
-    risk = response.content.strip().upper()
+    print("RULE BASED SAFETY AGENT ACTIVE")
 
-    if "CRITICAL" in risk:
-        return "CRITICAL"
+    query = query.lower()
 
-    elif "HIGH" in risk:
-        return "HIGH"
+    critical = [
+        "brake failure",
+        "engine overheating",
+        "engine heating",
+        "accident",
+        "fire",
+        "steering failure"
+    ]
 
-    elif "MEDIUM" in risk:
-        return "MEDIUM"
+    high = [
+        "flat tire",
+        "battery issue",
+        "engine problem",
+        "coolant leak"
+    ]
+
+    medium = [
+        "wiper failure",
+        "headlight issue"
+    ]
+
+    for item in critical:
+        if item in query:
+            return "CRITICAL"
+
+    for item in high:
+        if item in query:
+            return "HIGH"
+
+    for item in medium:
+        if item in query:
+            return "MEDIUM"
 
     return "LOW"

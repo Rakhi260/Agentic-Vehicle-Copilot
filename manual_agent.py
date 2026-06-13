@@ -12,7 +12,7 @@ db = FAISS.load_local(
 )
 
 def retrieve_manual_info(query):
-    docs = db.similarity_search(query, k=3)
+    docs = db.similarity_search(query, k=5)
     
     context = "\n\n".join(
         [doc.page_content for doc in docs]
