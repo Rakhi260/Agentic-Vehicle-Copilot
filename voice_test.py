@@ -1,63 +1,41 @@
-import speech_recognition as sr
-import pyttsx3
+from voice_agent import listen_to_driver
+from tts_agent import speak
 
 from supervisor import process_query
 
-#TTS Engine
-recognizer = sr.Recognizer()
+text = listen_to_driver()
 
-# Speech Recognition
-engine = pyttsx3.init()
+if text:
 
-with sr.Microphone() as source:
-    
-    print("Speak..")
-    
-    recognizer.adjust_for_ambient_noise(source)
-    
-    audio = recognizer.listen(source)
-try:  
-    text = recognizer.recognize_google(audio)
-
-    print("\nYou said:")
-    print(text)
-        
-    #Send to supervisor
     result = process_query(text)
 
-    risk = result.get("risk","Unknown")
+    risk = result.get("risk", "Unknown")
 
-    print("\nRisk:")
-    print(risk)
+    if "service_centre" in result:
+        centre = result["service_centre"][0]
 
-    # Build response
-    if risk == "CRITICAL":
+        message = (
+         f"Nearest service centre found. "
+         f"{centre['name']}"
+    )
+    
+    elif risk == "CRITICAL":
 
         message = (
             "Critical issue detected. "
-            "Please stop the vehicle safely and seek assistance."
+            "Please stop the vehicle safely."
         )
 
     elif risk == "HIGH":
 
         message = (
-            "High risk issue detected. "
-            "Please inspect the vehicle soon."
+            "High risk issue detected."
         )
 
     else:
 
         message = (
-            f"Risk level is {risk}."
+            f"Risk level is {risk}"
         )
 
-    print("\nSpeaking...")
-    print(message)
-
-    # TTS
-    engine.say(message)
-    engine.runAndWait()
-
-except Exception as e:
-
-    print("Error:", e)
+    speak(message)
