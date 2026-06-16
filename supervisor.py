@@ -11,7 +11,7 @@ def process_query(query):
     
     #manual agent
     if any (word in query_lower for word in [
-        "warning","engine","tire","brake","battery","overheat"
+        "warning","engine","tire","brake","battery","overheat","battery issue"
     ]):
         result["manual"] = retrieve_manual_info(query)
         

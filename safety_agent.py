@@ -22,7 +22,9 @@ def assess_risk(query):
 
     medium = [
         "wiper failure",
-        "headlight issue"
+        "headlight issue",
+        "wiper fail",
+        "wiper problem"
     ]
 
     for item in critical:
