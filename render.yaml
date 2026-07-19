@@ -1,8 +1,12 @@
 services:
   - type: web
     name: agentic-vehicle-copilot
-    env: python
+    runtime: python
     plan: free
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.11"
 
     buildCommand: pip install -r requirement.txt
 
