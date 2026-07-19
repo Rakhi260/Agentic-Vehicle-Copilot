@@ -1,7 +1,7 @@
 services:
   - type: web
     name: agentic-vehicle-copilot
-    runtime: python
+    env: python
     plan: free
 
     buildCommand: pip install -r requirement.txt
