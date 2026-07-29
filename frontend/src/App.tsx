@@ -91,7 +91,7 @@ function App() {
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 1500);
-        await fetch("http://localhost:8000/api/analyze", {
+        await fetch("https://agentic-vehicle-copilot.onrender.com/api/analyze", {    
           method: "OPTIONS",
           signal: controller.signal,
         });
@@ -259,7 +259,7 @@ function App() {
     }
 
     try {
-      const response = await fetch("http://localhost:8000/api/analyze", {
+      const response = await fetch("https://agentic-vehicle-copilot.onrender.com/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query, location }),
