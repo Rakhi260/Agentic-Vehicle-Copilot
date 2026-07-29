@@ -13,7 +13,7 @@ load_dotenv()
 
 # Import agents and supervisor
 from supervisor import process_query, build_context
-from voice_agent import listen_to_driver
+# from voice_agent import listen_to_driver
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 # Initialize Gemini LLM
@@ -152,20 +152,19 @@ async def analyze_issue(request):
         "summary": ai_summary
     })
 
-async def get_voice_input(request):
-    if request.method == "OPTIONS":
-        return JSONResponse({"status": "ok"})
+# async def get_voice_input(request):
+#     if request.method == "OPTIONS":
+#         return JSONResponse({"status": "ok"})
         
-    print("Starting backend voice recognition...")
-    try:
-        spoken_text = listen_to_driver()
-        return JSONResponse({"text": spoken_text})
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+#     print("Starting backend voice recognition...")
+#     try:
+#         spoken_text = listen_to_driver()
+#         return JSONResponse({"text": spoken_text})
+#     except Exception as e:
+#         return JSONResponse({"error": str(e)}, status_code=500)
 
 routes = [
     Route("/api/analyze", analyze_issue, methods=["POST", "OPTIONS"]),
-    Route("/api/voice", get_voice_input, methods=["POST", "OPTIONS"]),
 ]
 
 # Configure CORS Middleware using Starlette's CORSMiddleware
