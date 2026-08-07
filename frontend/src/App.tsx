@@ -269,7 +269,15 @@ function App() {
         throw new Error("Diagnostics request failed");
       }
 
-      const resData: DiagnosticsData = await response.json();
+      const text = await response.text();
+
+      console.log("========== RAW RESPONSE ==========");
+      console.log(text);
+
+      const resData: DiagnosticsData = JSON.parse(text);
+
+      console.log("========== PARSED RESPONSE ==========");
+      console.log(resData);
 
       // Finish agent checklist
       setAgentProgress(5);
