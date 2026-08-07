@@ -45,7 +45,9 @@ async def analyze_issue(request):
     start_time = time.time()
     
     # Run the supervisor query processor
+    print("STEP 1")
     result = process_query(query, location=location)
+    print("STEP 2")
     
     # Gather weather and manual data
     weather = result.get("weather", {})
