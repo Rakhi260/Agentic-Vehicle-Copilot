@@ -1,7 +1,15 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { ChatMessage } from "./components/ChatMessage";
-import type { ChatMessageData } from "./components/ChatMessage";
+import type { ChatMessageData, DiagnosticsData } from "./components/ChatMessage";
 import { ChatInputBar } from "./components/ChatInputBar";
+import {
+  API_BASE,
+  ANALYZE_TIMEOUT_MS,
+  COLD_START_TIMEOUT_MS,
+  HEALTH_INTERVAL_OFFLINE_MS,
+  HEALTH_INTERVAL_ONLINE_MS,
+  HEALTH_TIMEOUT_MS,
+} from "./config";
 import {
   Cpu,
   AlertTriangle,
@@ -19,23 +27,22 @@ import {
    Types
    ============================================ */
 
-interface DiagnosticsData {
-  query: string;
-  processing_time: string;
-  raw_agents_data: {
-    risk: string;
-    weather: any;
-    manual: string;
-    service_centre: any[];
-  };
-  summary: {
-    issue_summary: string;
-    risk_level: string;
-    weather_impact: string;
-    recommended_action: string[];
-    safety_advice: string[];
-    manual_summary?: any;
-  };
+type LinkState = "connecting" | "online" | "offline";
+
+async function pingBackend(timeoutMs: number): Promise<boolean> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${API_BASE}/api/health`, {
+      signal: controller.signal,
+      cache: "no-store",
+    });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 /* ============================================
@@ -75,7 +82,8 @@ function App() {
     },
   ]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isBackendConnected, setIsBackendConnected] = useState(false);
+  const [linkState, setLinkState] = useState<LinkState>("connecting");
+  const [isWakingBackend, setIsWakingBackend] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
@@ -84,28 +92,53 @@ function App() {
 
   const threadRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
+  const isLoadingRef = useRef(false);
+  const healthFailuresRef = useRef(0);
 
-  /* ---- Backend Health Check ---- */
   useEffect(() => {
-    const checkConnection = async () => {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60000);
-        await fetch("https://agentic-vehicle-copilot.onrender.com/api/analyze", {    
-          method: "OPTIONS",
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        setIsBackendConnected(true);
-      } catch {
-        setIsBackendConnected(false);
+    isLoadingRef.current = isLoading;
+  }, [isLoading]);
+
+  const recordHealth = useCallback((ok: boolean) => {
+    if (ok) {
+      healthFailuresRef.current = 0;
+      setLinkState("online");
+    } else {
+      healthFailuresRef.current += 1;
+      // One missed ping is not enough to call the link down.
+      if (healthFailuresRef.current >= 2) setLinkState("offline");
+    }
+  }, []);
+
+  /* ---- Backend Health Check ----
+     The backend runs on Render's free plan, which sleeps when idle and needs up to a
+     minute to wake. The old check gave up after 1.5 s, so the dot stayed red even
+     though the server was only waking up. The first ping now waits long enough for a
+     cold start, and later pings run on a relaxed schedule. */
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let first = true;
+
+    const run = async () => {
+      let ok: boolean | null = null;
+      if (!isLoadingRef.current) {
+        ok = await pingBackend(first ? COLD_START_TIMEOUT_MS : HEALTH_TIMEOUT_MS);
+        if (cancelled) return;
+        if (first && !ok) healthFailuresRef.current = 1; // show OFFLINE right after a failed cold start
+        recordHealth(ok);
+        first = false;
       }
+      const next = ok === false ? HEALTH_INTERVAL_OFFLINE_MS : HEALTH_INTERVAL_ONLINE_MS;
+      timer = setTimeout(run, next);
     };
 
-    checkConnection();
-    const interval = setInterval(checkConnection, 5000);
-    return () => clearInterval(interval);
-  }, []);
+    run();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [recordHealth]);
 
   /* ---- Auto-Scroll ---- */
   useEffect(() => {
@@ -259,25 +292,35 @@ function App() {
     }
 
     try {
-      const response = await fetch("https://agentic-vehicle-copilot.onrender.com/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, location }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Diagnostics request failed");
+      // If the free Render instance is asleep, wake it before sending the query.
+      if (linkState !== "online") {
+        setIsWakingBackend(true);
+        setLinkState("connecting");
+        const awake = await pingBackend(COLD_START_TIMEOUT_MS);
+        setIsWakingBackend(false);
+        recordHealth(awake);
       }
 
-      const text = await response.text();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), ANALYZE_TIMEOUT_MS);
+      let response: Response;
+      try {
+        response = await fetch(`${API_BASE}/api/analyze`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query, location }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
-      console.log("========== RAW RESPONSE ==========");
-      console.log(text);
+      if (!response.ok) {
+        throw new Error(`Diagnostics request failed with status ${response.status}`);
+      }
 
-      const resData: DiagnosticsData = JSON.parse(text);
-
-      console.log("========== PARSED RESPONSE ==========");
-      console.log(resData);
+      const resData: DiagnosticsData = await response.json();
+      recordHealth(true);
 
       // Finish agent checklist
       setAgentProgress(5);
@@ -326,14 +369,20 @@ function App() {
       }
     } catch (err: any) {
       console.error(err);
+      setIsWakingBackend(false);
+      const timedOut = err?.name === "AbortError";
       setErrorMessage(
-        "System diagnostic connection failed. Ensure the local Python backend is running."
+        timedOut
+          ? "The diagnostic backend took too long to answer."
+          : "System diagnostic connection failed."
       );
       // Add error copilot message
       const errorMsg: ChatMessageData = {
         id: nextMsgId(),
         role: "copilot",
-        text: "⚠️ I couldn't reach the diagnostic backend. Please ensure the Python server is running on port 8000.",
+        text: timedOut
+          ? "⚠️ The diagnostic backend took too long to respond. The free server may still be starting up. Please send your question again in a few seconds."
+          : "⚠️ I couldn't reach the diagnostic backend. The free server may be waking up. Please try again in a few seconds.",
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMsg]);
@@ -385,11 +434,11 @@ function App() {
           </button>
         </div>
 
-        <div className="sidebar-status">
-          <span
-            className={`status-dot ${isBackendConnected ? "online" : "offline"}`}
-          />
-          {isBackendConnected ? "TELEMETRY LINK ONLINE" : "TELEMETRY LINK OFFLINE"}
+        <div className="sidebar-status" title={linkState === "connecting" ? "The free backend server sleeps when idle and can take up to a minute to wake up." : undefined}>
+          <span className={`status-dot ${linkState}`} />
+          {linkState === "online" && "TELEMETRY LINK ONLINE"}
+          {linkState === "connecting" && "ESTABLISHING TELEMETRY LINK..."}
+          {linkState === "offline" && "TELEMETRY LINK OFFLINE"}
         </div>
 
         <div className="sidebar-section-title">Settings</div>
@@ -478,16 +527,22 @@ function App() {
                   width: "8px",
                   height: "8px",
                   borderRadius: "50%",
-                  backgroundColor: isBackendConnected
-                    ? "var(--cyber-green)"
-                    : "var(--cyber-red)",
-                  boxShadow: isBackendConnected
-                    ? "var(--glow-green)"
-                    : "var(--glow-red)",
+                  backgroundColor:
+                    linkState === "online"
+                      ? "var(--cyber-green)"
+                      : linkState === "connecting"
+                        ? "var(--cyber-yellow)"
+                        : "var(--cyber-red)",
+                  boxShadow:
+                    linkState === "online"
+                      ? "var(--glow-green)"
+                      : linkState === "connecting"
+                        ? "var(--glow-yellow)"
+                        : "var(--glow-red)",
                   display: "inline-block",
                 }}
               />
-              {isBackendConnected ? "ONLINE" : "OFFLINE"}
+              {linkState === "online" ? "ONLINE" : linkState === "connecting" ? "CONNECTING" : "OFFLINE"}
             </span>
           </div>
         </div>
@@ -497,9 +552,15 @@ function App() {
           <div style={{ padding: "0.5rem 1.5rem 0" }}>
             <div className="chat-error">
               ❌ {errorMessage}
-              <span className="error-hint">
-                Run: <code>uvicorn main:app --reload --port 8000</code>
-              </span>
+              {import.meta.env.DEV ? (
+                <span className="error-hint">
+                  Run: <code>uvicorn main:app --reload --port 8000</code>
+                </span>
+              ) : (
+                <span className="error-hint">
+                  The backend sleeps when idle and can take up to a minute to wake. Try again shortly.
+                </span>
+              )}
             </div>
           </div>
         )}
@@ -553,11 +614,12 @@ function App() {
                 </div>
                 <div className="scan-line" />
                 <span className="typing-subtext">
-                  {agentProgress === 0 && "RUNNING MANUAL AGENT..."}
-                  {agentProgress === 1 && "RUNNING WEATHER AGENT..."}
-                  {agentProgress === 2 && "RUNNING SAFETY AGENT..."}
-                  {agentProgress === 3 && "RUNNING SERVICE CENTRE AGENT..."}
-                  {agentProgress >= 4 && "CORRELATING DATA WITH GEMINI..."}
+                  {isWakingBackend && "WAKING UP BACKEND SERVER (UP TO 1 MIN)..."}
+                  {!isWakingBackend && agentProgress === 0 && "RUNNING MANUAL AGENT..."}
+                  {!isWakingBackend && agentProgress === 1 && "RUNNING WEATHER AGENT..."}
+                  {!isWakingBackend && agentProgress === 2 && "RUNNING SAFETY AGENT..."}
+                  {!isWakingBackend && agentProgress === 3 && "RUNNING SERVICE CENTRE AGENT..."}
+                  {!isWakingBackend && agentProgress >= 4 && "CORRELATING DATA WITH GEMINI..."}
                 </span>
               </div>
             </div>
@@ -568,7 +630,7 @@ function App() {
         <ChatInputBar
           onSend={handleSend}
           isLoading={isLoading}
-          isBackendConnected={isBackendConnected}
+          linkState={linkState}
           voiceState={voiceState}
           onVoiceToggle={handleMicToggle}
         />
